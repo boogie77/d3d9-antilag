@@ -1,0 +1,5 @@
+LIBRARY "d3d9.dll"
+EXPORTS
+{% for name in names -%}
+{{ name }}
+{% endfor %}
