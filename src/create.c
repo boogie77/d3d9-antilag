@@ -1,5 +1,9 @@
 #include <d3d9.h>
+#include <stdint.h>
+#include <stdio.h>
 #include "protect.h"
+
+#define TARGET_LATENCY_US (3000)
 
 static HRESULT (WINAPI *orig_d3d9_CreateDevice)(
     IDirect3D9 *This,
@@ -10,46 +14,59 @@ static HRESULT (WINAPI *orig_d3d9_CreateDevice)(
     D3DPRESENT_PARAMETERS *pPresentationParameters,
     IDirect3DDevice9 **ppReturnedDeviceInterface);
 
-static ULONG (WINAPI *orig_d3d9_device_Release)(
-    IDirect3DDevice9 *This);
-
-static HRESULT (WINAPI *orig_d3d9_device_Reset)(
-    IDirect3DDevice9 *This,
-    D3DPRESENT_PARAMETERS *pPresentationParameters);
-
-static HRESULT (WINAPI *orig_d3d9_device_Present)(
-    IDirect3DDevice9 *This,
+static HRESULT (WINAPI *orig_d3d9_swap_chain_Present)(
+    IDirect3DSwapChain9 *This,
     const RECT *pSourceRect,
     const RECT *pDestRect,
     HWND hDestWindowOverride,
-    const RGNDATA *pDirtyRegion);
+    const RGNDATA *pDirtyRegion,
+    DWORD dwFlags);
 
-ULONG WINAPI d3d9_device_Release(
-    IDirect3DDevice9 *This)
-{
-    return orig_d3d9_device_Release(This);
-}
+static LARGE_INTEGER perf_freq;
+static LARGE_INTEGER start_time;
+static IDirect3DDevice9 *device;
+static IDirect3DDevice9Vtbl *device_vtbl;
 
-HRESULT WINAPI d3d9_device_Reset(
-    IDirect3DDevice9 *This,
-    D3DPRESENT_PARAMETERS *pPresentationParameters)
-{
-    return orig_d3d9_device_Reset(This, pPresentationParameters);
-}
-
-HRESULT WINAPI d3d9_device_Present(
-    IDirect3DDevice9 *This,
+HRESULT WINAPI d3d9_swap_chain_Present(
+    IDirect3DSwapChain9 *This,
     const RECT *pSourceRect,
     const RECT *pDestRect,
     HWND hDestWindowOverride,
-    const RGNDATA *pDirtyRegion)
+    const RGNDATA *pDirtyRegion,
+    DWORD dwFlags)
 {
-    return orig_d3d9_device_Present(
+    HRESULT hr;
+    uint64_t elapsed_us;
+    LARGE_INTEGER end_time;
+    hr = orig_d3d9_swap_chain_Present(
         This,
         pSourceRect,
         pDestRect,
         hDestWindowOverride,
-        pDirtyRegion);
+        pDirtyRegion,
+        dwFlags);
+    QueryPerformanceCounter(&end_time);
+    elapsed_us = (end_time.QuadPart - start_time.QuadPart) * 1000000 / perf_freq.QuadPart;
+    
+    uint64_t expect_us;
+    if (elapsed_us <= TARGET_LATENCY_US - 66) {
+        expect_us = 13266;
+    } else if (elapsed_us <= TARGET_LATENCY_US + 66) {
+        expect_us = elapsed_us + (13333 - TARGET_LATENCY_US);
+    } else {
+        expect_us = 13400;
+    }
+    if (elapsed_us <= expect_us) {
+        if (expect_us - elapsed_us >= 3000) {
+            Sleep((expect_us - elapsed_us - 2000) / 1000);
+        }
+        do {
+            QueryPerformanceCounter(&end_time);
+            elapsed_us = (end_time.QuadPart - start_time.QuadPart) * 1000000 / perf_freq.QuadPart;
+        } while (elapsed_us <= expect_us);
+    }
+    QueryPerformanceCounter(&start_time);
+    return hr;
 }
 
 HRESULT WINAPI d3d9_CreateDevice(
@@ -61,8 +78,8 @@ HRESULT WINAPI d3d9_CreateDevice(
     D3DPRESENT_PARAMETERS *pPresentationParameters,
     IDirect3DDevice9 **ppReturnedDeviceInterface)
 {
-    IDirect3DDevice9 *device;
-    IDirect3DDevice9Vtbl *device_vtbl;
+    IDirect3DSwapChain9 *swap_chain;
+    IDirect3DSwapChain9Vtbl *swap_chain_vtbl;
     HRESULT hr = orig_d3d9_CreateDevice(
         This,
         Adapter,
@@ -74,17 +91,14 @@ HRESULT WINAPI d3d9_CreateDevice(
     if (FAILED(hr)) {
         return hr;
     }
-    
-    device_vtbl = device->lpVtbl;
-    orig_d3d9_device_Release = device_vtbl->Release;
-    orig_d3d9_device_Reset = device_vtbl->Reset;
-    orig_d3d9_device_Present = device_vtbl->Present;
 
-    MP_PROTECT_BEGIN(device_vtbl, sizeof(*device_vtbl));
-    device_vtbl->Release = d3d9_device_Release;
-    device_vtbl->Reset = d3d9_device_Reset;
-    device_vtbl->Present = d3d9_device_Present;
-    MP_PROTECT_END(device_vtbl, sizeof(*device_vtbl));
+    device_vtbl = device->lpVtbl;
+    device_vtbl->GetSwapChain(device, 0, &swap_chain);
+    swap_chain_vtbl = swap_chain->lpVtbl;
+    orig_d3d9_swap_chain_Present = swap_chain_vtbl->Present;
+    MP_PROTECT_BEGIN(swap_chain_vtbl, sizeof(*swap_chain_vtbl));
+    swap_chain_vtbl->Present = d3d9_swap_chain_Present;
+    MP_PROTECT_END(swap_chain_vtbl, sizeof(*swap_chain_vtbl));
     *ppReturnedDeviceInterface = device;
     return S_OK;
 }
@@ -92,9 +106,17 @@ HRESULT WINAPI d3d9_CreateDevice(
 IDirect3D9 *WINAPI Direct3DCreate9(UINT SDKVersion)
 {
     extern IDirect3D9 *(WINAPI *orig_Direct3DCreate9)(UINT SDKVersion);
-    IDirect3D9 *d3d9 = orig_Direct3DCreate9(SDKVersion);
-    IDirect3D9Vtbl *d3d9_vtbl = d3d9->lpVtbl;
+    IDirect3D9 *d3d9;
+    IDirect3D9Vtbl *d3d9_vtbl;
+    HANDLE process;
 
+    QueryPerformanceFrequency(&perf_freq);
+    process = OpenProcess(PROCESS_ALL_ACCESS, 0, GetCurrentProcessId());
+    SetPriorityClass(process, HIGH_PRIORITY_CLASS);
+    CloseHandle(process);
+
+    d3d9 = orig_Direct3DCreate9(SDKVersion);
+    d3d9_vtbl = d3d9->lpVtbl;
     orig_d3d9_CreateDevice = d3d9_vtbl->CreateDevice;
     MP_PROTECT_BEGIN(d3d9_vtbl, sizeof(*d3d9_vtbl));
     d3d9_vtbl->CreateDevice = d3d9_CreateDevice;
