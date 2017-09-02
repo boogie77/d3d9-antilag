@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include "protect.h"
 
-#define TARGET_LATENCY_US (3000)
+#define TARGET_LATENCY_TICKS (30000)
 
 static HRESULT (WINAPI *orig_d3d9_CreateDevice)(
     IDirect3D9 *This,
@@ -12,14 +12,6 @@ static HRESULT (WINAPI *orig_d3d9_CreateDevice)(
     DWORD BehaviorFlags,
     D3DPRESENT_PARAMETERS *pPresentationParameters,
     IDirect3DDevice9 **ppReturnedDeviceInterface);
-
-static HRESULT (WINAPI *orig_d3d9_swap_chain_Present)(
-    IDirect3DSwapChain9 *This,
-    const RECT *pSourceRect,
-    const RECT *pDestRect,
-    HWND hDestWindowOverride,
-    const RGNDATA *pDirtyRegion,
-    DWORD dwFlags);
 
 static LARGE_INTEGER perf_freq;
 static LARGE_INTEGER start_time;
@@ -34,35 +26,19 @@ HRESULT WINAPI d3d9_swap_chain_Present(
     const RGNDATA *pDirtyRegion,
     DWORD dwFlags)
 {
-    HRESULT hr;
-    uint64_t elapsed_us;
-    LARGE_INTEGER end_time;
-    hr = orig_d3d9_swap_chain_Present(
-        This,
+    HRESULT hr = device_vtbl->Present(
+        device,
         pSourceRect,
         pDestRect,
         hDestWindowOverride,
-        pDirtyRegion,
-        dwFlags);
+        pDirtyRegion);
+    LARGE_INTEGER end_time;
     QueryPerformanceCounter(&end_time);
-    elapsed_us = (end_time.QuadPart - start_time.QuadPart) * 1000000 / perf_freq.QuadPart;
-    
-    uint64_t expect_us;
-    if (elapsed_us <= TARGET_LATENCY_US - 66) {
-        expect_us = 13266;
-    } else if (elapsed_us <= TARGET_LATENCY_US + 66) {
-        expect_us = elapsed_us + (13333 - TARGET_LATENCY_US);
-    } else {
-        expect_us = 13400;
-    }
-    if (elapsed_us <= expect_us) {
-        if (expect_us - elapsed_us >= 3000) {
-            Sleep((expect_us - elapsed_us - 2000) / 1000);
-        }
-        do {
-            QueryPerformanceCounter(&end_time);
-            elapsed_us = (end_time.QuadPart - start_time.QuadPart) * 1000000 / perf_freq.QuadPart;
-        } while (elapsed_us <= expect_us);
+    int64_t elapsed_ticks = (end_time.QuadPart - start_time.QuadPart) * 10000000 / perf_freq.QuadPart;
+    int64_t expected_ticks = 133333 + (elapsed_ticks - TARGET_LATENCY_TICKS) / 4;
+    while (elapsed_ticks < expected_ticks) {
+        QueryPerformanceCounter(&end_time);
+        elapsed_ticks = (end_time.QuadPart - start_time.QuadPart) * 10000000 / perf_freq.QuadPart;
     }
     QueryPerformanceCounter(&start_time);
     return hr;
@@ -94,7 +70,6 @@ HRESULT WINAPI d3d9_CreateDevice(
     device_vtbl = device->lpVtbl;
     device_vtbl->GetSwapChain(device, 0, &swap_chain);
     swap_chain_vtbl = swap_chain->lpVtbl;
-    orig_d3d9_swap_chain_Present = swap_chain_vtbl->Present;
     MP_PROTECT_BEGIN(swap_chain_vtbl, sizeof(*swap_chain_vtbl));
     swap_chain_vtbl->Present = d3d9_swap_chain_Present;
     MP_PROTECT_END(swap_chain_vtbl, sizeof(*swap_chain_vtbl));
