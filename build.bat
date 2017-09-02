@@ -18,8 +18,11 @@ md %OBJ% 2> nul
 %YASM% %YASM_FLAGS% -o %OBJ%\stub.o %SRC%\genfiles\stub.asm
 %GCC% %GCC_FLAGS% -o %OBJ%\dllmain.o %SRC%\dllmain.c
 %GCC% %GCC_FLAGS% -o %OBJ%\create.o %SRC%\create.c
+%GCC% %GCC_FLAGS% -o %OBJ%\log.o %SRC%\log.c
 %GCC% %GCC_LINK_FLAGS% -o %BIN%\d3d9.dll ^
     %OBJ%\stub.o ^
     %OBJ%\dllmain.o ^
     %OBJ%\create.o ^
-    %SRC%\genfiles\export.def
+    %OBJ%\log.o ^
+    %SRC%\genfiles\export.def ^
+    -lmsvcrt

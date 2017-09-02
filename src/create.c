@@ -1,6 +1,5 @@
 #include <d3d9.h>
 #include <stdint.h>
-#include <stdio.h>
 #include "protect.h"
 
 #define TARGET_LATENCY_US (3000)
