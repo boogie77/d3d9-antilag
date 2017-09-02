@@ -108,12 +108,9 @@ IDirect3D9 *WINAPI Direct3DCreate9(UINT SDKVersion)
     extern IDirect3D9 *(WINAPI *orig_Direct3DCreate9)(UINT SDKVersion);
     IDirect3D9 *d3d9;
     IDirect3D9Vtbl *d3d9_vtbl;
-    HANDLE process;
 
+    SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
     QueryPerformanceFrequency(&perf_freq);
-    process = OpenProcess(PROCESS_ALL_ACCESS, 0, GetCurrentProcessId());
-    SetPriorityClass(process, HIGH_PRIORITY_CLASS);
-    CloseHandle(process);
 
     d3d9 = orig_Direct3DCreate9(SDKVersion);
     d3d9_vtbl = d3d9->lpVtbl;
