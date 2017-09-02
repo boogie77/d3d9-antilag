@@ -9,7 +9,7 @@ set GCC=gcc
 set YASM=%TOOLS%\yasm-1.3.0-win32.exe
 
 set GCC_FLAGS=-O2 -c
-set GCC_LINK_FLAGS=-shared -nostartfiles -s -Wl,--enable-stdcall-fixup -e _DllMain
+set GCC_LINK_FLAGS=-shared -nostartfiles -static -s -Wl,--enable-stdcall-fixup -e _DllMain
 set YASM_FLAGS=-f win32
 
 md %BIN% 2> nul
