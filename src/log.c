@@ -5,9 +5,9 @@
 
 void vlprintf(const char *format, va_list args)
 {
-    int size = vsnprintf(NULL, 0, format, args) + 1;
-    char *buffer = alloca(size);
-    vsnprintf(buffer, size, format, args);
+    int size = _vsnprintf(NULL, 0, format, args) + 1;
+    char *buffer = _alloca(size);
+    _vsnprintf(buffer, size, format, args);
     OutputDebugStringA(buffer);
 }
 

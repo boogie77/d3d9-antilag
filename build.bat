@@ -24,5 +24,4 @@ md %OBJ% 2> nul
     %OBJ%\dllmain.o ^
     %OBJ%\create.o ^
     %OBJ%\log.o ^
-    %SRC%\genfiles\export.def ^
-    -lmsvcrt
+    %SRC%\genfiles\export.def
