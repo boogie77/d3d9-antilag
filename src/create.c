@@ -13,10 +13,21 @@ static HRESULT (WINAPI *orig_d3d9_CreateDevice)(
     D3DPRESENT_PARAMETERS *pPresentationParameters,
     IDirect3DDevice9 **ppReturnedDeviceInterface);
 
+typedef struct {
+    void (*after_present)(IDirect3DDevice9 *device);
+} extension_ptrs_t;
+
 static LARGE_INTEGER perf_freq;
 static LARGE_INTEGER start_time;
 static IDirect3DDevice9 *device;
 static IDirect3DDevice9Vtbl *device_vtbl;
+extension_ptrs_t *volatile extension_ptrs;
+
+#define UPDATE_ELAPSED_TICKS() \
+    do { \
+        QueryPerformanceCounter(&end_time); \
+        elapsed_ticks = (end_time.QuadPart - start_time.QuadPart) * 10000000 / perf_freq.QuadPart; \
+    } while (0)
 
 HRESULT WINAPI d3d9_swap_chain_Present(
     IDirect3DSwapChain9 *This,
@@ -33,12 +44,21 @@ HRESULT WINAPI d3d9_swap_chain_Present(
         hDestWindowOverride,
         pDirtyRegion);
     LARGE_INTEGER end_time;
-    QueryPerformanceCounter(&end_time);
-    int64_t elapsed_ticks = (end_time.QuadPart - start_time.QuadPart) * 10000000 / perf_freq.QuadPart;
-    int64_t expected_ticks = 133333 + (elapsed_ticks - TARGET_LATENCY_TICKS) / 4;
-    while (elapsed_ticks < expected_ticks) {
-        QueryPerformanceCounter(&end_time);
-        elapsed_ticks = (end_time.QuadPart - start_time.QuadPart) * 10000000 / perf_freq.QuadPart;
+    int64_t elapsed_ticks;
+    UPDATE_ELAPSED_TICKS();
+    int64_t expected_ticks = 133333 + (elapsed_ticks - TARGET_LATENCY_TICKS) / 5;
+    extension_ptrs_t *ext = extension_ptrs;
+    if (ext) {
+        ext->after_present(device);
+    }
+    UPDATE_ELAPSED_TICKS();
+    if (elapsed_ticks <= expected_ticks) {
+        if (expected_ticks - elapsed_ticks >= 30000) {
+            Sleep((expected_ticks - elapsed_ticks) / 10000 - 2);
+        }
+        do {
+            UPDATE_ELAPSED_TICKS();
+        } while (elapsed_ticks <= expected_ticks);
     }
     QueryPerformanceCounter(&start_time);
     return hr;
