@@ -13,4 +13,3 @@ Direct3DCreate9
 Direct3DShaderValidatorCreate9
 PSGPError
 PSGPSampleTexture
-extension_ptrs

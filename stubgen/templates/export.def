@@ -3,4 +3,3 @@ EXPORTS
 {% for name in names -%}
 {{ name }}
 {% endfor %}
-extension_ptrs
