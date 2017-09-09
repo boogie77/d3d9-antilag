@@ -39,7 +39,7 @@ static IDirect3DDevice9Vtbl *device_vtbl;
         elapsed_ticks = (end_time.QuadPart - start_time.QuadPart) * 10000000 / perf_freq.QuadPart; \
     } while (0)
 
-void handle_obs(uintptr_t reloc_offset)
+static inline void handle_obs(uintptr_t reloc_offset)
 {
     MP_PROTECT_BEGIN(orig_d3d9_device_Present, 5);
     *(uint32_t *)orig_d3d9_device_Present = 0x8b55ff8b;
