@@ -113,8 +113,6 @@ HRESULT WINAPI d3d9_CreateDevice(
     D3DPRESENT_PARAMETERS *pPresentationParameters,
     IDirect3DDevice9 **ppReturnedDeviceInterface)
 {
-    IDirect3DSwapChain9 *swap_chain;
-    IDirect3DSwapChain9Vtbl *swap_chain_vtbl;
     HRESULT hr = orig_d3d9_CreateDevice(
         This,
         Adapter,
@@ -129,8 +127,9 @@ HRESULT WINAPI d3d9_CreateDevice(
 
     device_vtbl = device->lpVtbl;
     orig_d3d9_device_Present = device_vtbl->Present;
+    IDirect3DSwapChain9 *swap_chain;
     device_vtbl->GetSwapChain(device, 0, &swap_chain);
-    swap_chain_vtbl = swap_chain->lpVtbl;
+    IDirect3DSwapChain9Vtbl *swap_chain_vtbl = swap_chain->lpVtbl;
     MP_PROTECT_BEGIN(swap_chain_vtbl, sizeof(*swap_chain_vtbl));
     swap_chain_vtbl->Present = d3d9_swap_chain_Present;
     MP_PROTECT_END(swap_chain_vtbl, sizeof(*swap_chain_vtbl));
@@ -140,16 +139,12 @@ HRESULT WINAPI d3d9_CreateDevice(
 
 IDirect3D9 *WINAPI Direct3DCreate9(UINT SDKVersion)
 {
-    extern IDirect3D9 *(WINAPI *orig_Direct3DCreate9)(UINT SDKVersion);
-    IDirect3D9 *d3d9;
-    IDirect3D9Vtbl *d3d9_vtbl;
-
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
     QueryPerformanceFrequency(&perf_freq);
 
-    d3d9 = orig_Direct3DCreate9(SDKVersion);
-    d3d9_vtbl = d3d9->lpVtbl;
+    extern IDirect3D9 *(WINAPI *orig_Direct3DCreate9)(UINT SDKVersion);
+    IDirect3D9 *d3d9 = orig_Direct3DCreate9(SDKVersion);
+    IDirect3D9Vtbl *d3d9_vtbl = d3d9->lpVtbl;
     orig_d3d9_CreateDevice = d3d9_vtbl->CreateDevice;
     MP_PROTECT_BEGIN(d3d9_vtbl, sizeof(*d3d9_vtbl));
     d3d9_vtbl->CreateDevice = d3d9_CreateDevice;
